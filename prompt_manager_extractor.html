@@ -1,0 +1,536 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <title>プロンプト管理付き記事抽出ツール</title>
+    <style>
+        body { font-family: Arial; max-width: 900px; margin: 20px auto; padding: 20px; background: #f5f5f5; }
+        .container { background: white; padding: 30px; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
+        h1 { color: #333; text-align: center; }
+        h2 { color: #444; border-bottom: 2px solid #4CAF50; padding-bottom: 10px; }
+        .tabs { display: flex; margin-bottom: 20px; border-bottom: 2px solid #ddd; }
+        .tab { padding: 15px 25px; cursor: pointer; border: none; background: #f8f9fa; margin-right: 5px; border-radius: 5px 5px 0 0; }
+        .tab.active { background: #4CAF50; color: white; }
+        .tab-content { display: none; }
+        .tab-content.active { display: block; }
+        input, textarea, select { width: 100%; padding: 12px; margin: 10px 0; border: 1px solid #ddd; border-radius: 4px; box-sizing: border-box; }
+        button { width: 100%; padding: 12px; margin: 10px 0; background: #4CAF50; color: white; border: none; border-radius: 4px; cursor: pointer; }
+        button:hover { background: #45a049; }
+        button.secondary { background: #6c757d; }
+        button.secondary:hover { background: #5a6268; }
+        button.danger { background: #dc3545; }
+        button.danger:hover { background: #c82333; }
+        .status { padding: 12px; margin: 10px 0; border-radius: 4px; font-weight: bold; }
+        .success { background: #d4edda; color: #155724; }
+        .error { background: #f8d7da; color: #721c24; }
+        .loading { background: #fff3cd; color: #856404; }
+        .hidden { display: none; }
+        .prompt-item { background: #f8f9fa; border: 1px solid #dee2e6; padding: 15px; margin: 10px 0; border-radius: 4px; }
+        .prompt-actions { display: flex; gap: 10px; margin-top: 10px; }
+        .prompt-actions button { width: auto; padding: 8px 16px; margin: 0; }
+        .info-box { background: #e7f3ff; border: 1px solid #b3d9ff; padding: 15px; margin: 15px 0; border-radius: 4px; }
+        .manual-section { background: #fff3cd; border: 1px solid #ffeaa7; padding: 15px; margin: 15px 0; border-radius: 4px; }
+        .url-item { background: #f8f9fa; border: 1px solid #dee2e6; padding: 15px; margin: 10px 0; border-radius: 4px; }
+        .url-link { color: #007bff; font-weight: bold; text-decoration: none; }
+        .url-link:hover { text-decoration: underline; }
+        .preview { background: #f8f9fa; padding: 15px; margin: 10px 0; border-radius: 4px; border: 1px solid #dee2e6; }
+        .genre-selector { background: #e8f5e8; border: 1px solid #c3e6cb; padding: 15px; margin: 15px 0; border-radius: 4px; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🚀 プロンプト管理付き記事抽出ツール</h1>
+        
+        <div class="tabs">
+            <button class="tab active" onclick="switchTab('prompts')">📝 プロンプト管理</button>
+            <button class="tab" onclick="switchTab('extraction')">📄 記事抽出</button>
+        </div>
+
+        <!-- プロンプト管理タブ -->
+        <div id="prompts-tab" class="tab-content active">
+            <h2>📝 プロンプト管理</h2>
+            
+            <div class="info-box">
+                <h4>💡 プロンプト管理について</h4>
+                <p>ここで各ジャンル用のプロンプトを作成・管理できます。</p>
+                <p>外注作業時は「記事抽出」タブでジャンルを選択するだけで、適切なプロンプトが自動で組み込まれます。</p>
+            </div>
+
+            <h3>新しいプロンプトを追加</h3>
+            <input type="text" id="newGenre" placeholder="ジャンル名（例：リフォーム、医療、不動産）">
+            <textarea id="newPrompt" rows="8" placeholder="プロンプト内容を入力&#10;例：&#10;サイト記事のゴール：福岡市東区でリフォーム又はリノベーションの相談予約を増やすこと&#10;目標キーワード：{keyword}&#10;関連するキーワード：リフォーム福岡市、リフォーム福岡市東区..."></textarea>
+            <button onclick="addPrompt()">➕ プロンプトを追加</button>
+
+            <h3>登録済みプロンプト一覧</h3>
+            <div id="promptsList"></div>
+            
+            <h3>初期プロンプトの復元</h3>
+            <button class="secondary" onclick="loadDefaultPrompts()">🔄 デフォルトプロンプトを読み込み</button>
+        </div>
+
+        <!-- 記事抽出タブ -->
+        <div id="extraction-tab" class="tab-content">
+            <h2>📄 記事抽出</h2>
+            
+            <div class="genre-selector">
+                <h3>🎯 ジャンル選択</h3>
+                <select id="genreSelect" onchange="updateGenreSelection()">
+                    <option value="">ジャンルを選択してください</option>
+                </select>
+                <div id="selectedPromptPreview" class="hidden">
+                    <h4>選択中のプロンプト:</h4>
+                    <div id="promptPreview" style="background: white; padding: 10px; border-radius: 4px; border: 1px solid #ddd; max-height: 100px; overflow-y: auto; font-size: 12px;"></div>
+                </div>
+            </div>
+
+            <h3>記事情報</h3>
+            <input type="text" id="keyword" placeholder="キーワード">
+            <textarea id="urls" rows="6" placeholder="URL一覧（1行に1つ）"></textarea>
+            <button onclick="prepareExtraction()">📋 記事リスト作成</button>
+            
+            <div id="urlList" class="hidden">
+                <h3>📋 記事一覧</h3>
+                <div id="urlItems"></div>
+            </div>
+            
+            <div id="manualInput" class="hidden">
+                <div class="manual-section">
+                    <h4>📝 記事内容の入力</h4>
+                    <p><strong>現在処理中：</strong> <span id="currentUrl"></span></p>
+                    <p><strong>操作：</strong> 記事ページで全選択（Ctrl+A）→ コピー（Ctrl+C）→ 下に貼り付け（Ctrl+V）</p>
+                    <textarea id="articleContent" rows="12" placeholder="記事の内容を全てここに貼り付けてください"></textarea>
+                    <button onclick="previewContent()">🔍 プレビュー表示</button>
+                    <button onclick="addArticleAuto()">🔄 自動処理してこの記事を追加</button>
+                    <button onclick="skipArticle()">⏭️ スキップ</button>
+                    
+                    <div id="preview" class="preview hidden">
+                        <h5>📋 抽出プレビュー</h5>
+                        <p><strong>抽出されるタイトル:</strong> <span id="previewTitle"></span></p>
+                        <p><strong>クリーンアップ後文字数:</strong> <span id="previewWordCount"></span></p>
+                        <p><strong>内容プレビュー（最初の200文字）:</strong></p>
+                        <div id="previewContent" style="background: white; padding: 10px; border-radius: 4px; border: 1px solid #ddd; max-height: 100px; overflow-y: auto;"></div>
+                    </div>
+                </div>
+            </div>
+            
+            <div id="output" class="hidden">
+                <h3>📤 Claude AI投入用完成データ</h3>
+                <textarea id="result" rows="25" readonly></textarea>
+                <button onclick="copyResult()">📋 Claude AIにコピー&ペースト</button>
+            </div>
+        </div>
+
+        <div id="status" class="status hidden"></div>
+    </div>
+
+    <script>
+        let prompts = {};
+        let urls = [];
+        let currentIndex = 0;
+        let articles = [];
+        let selectedGenre = '';
+        
+        // ページ読み込み時の初期化
+        window.onload = function() {
+            loadPrompts();
+            updateGenreSelect();
+            updatePromptsList();
+        };
+
+        function switchTab(tabName) {
+            // タブボタンの状態更新
+            document.querySelectorAll('.tab').forEach(tab => tab.classList.remove('active'));
+            document.querySelector(`[onclick="switchTab('${tabName}')"]`).classList.add('active');
+            
+            // タブコンテンツの表示切り替え
+            document.querySelectorAll('.tab-content').forEach(content => content.classList.remove('active'));
+            document.getElementById(`${tabName}-tab`).classList.add('active');
+        }
+
+        function showStatus(msg, type) {
+            const status = document.getElementById('status');
+            status.textContent = msg;
+            status.className = 'status ' + type;
+            status.classList.remove('hidden');
+            setTimeout(() => status.classList.add('hidden'), 5000);
+        }
+
+        // プロンプト管理機能
+        function loadPrompts() {
+            const saved = localStorage.getItem('customPrompts');
+            if (saved) {
+                prompts = JSON.parse(saved);
+            } else {
+                loadDefaultPrompts();
+            }
+        }
+
+        function savePrompts() {
+            localStorage.setItem('customPrompts', JSON.stringify(prompts));
+        }
+
+        function loadDefaultPrompts() {
+            prompts = {
+                "リフォーム・リノベーション": `【指示文①】
+
+＃サイト記事のゴール：福岡市東区でリフォーム又はリノベーションの相談予約を増やすこと
+＃目標キーワード：{keyword}
+＃上位2-3記事をまとめて書いたオリジナル記事が下記
+＃集客のために関連するキーワード：リフォーム福岡市、リフォーム福岡市東区、リノベーション福岡市、リノベーション福岡市東区、マンションリフォーム 福岡市東区、マンションリノベーション 福岡市東区、戸建てリフォーム 福岡市東区、戸建てリノベーション 福岡市東区、水回りリフォーム 福岡市東区、水回りリノベーション 福岡市東区
+
+#下記はクロードAIで作成するSEOで上位を目指す記事です。この記事の評価が高くなければより良いものにしてください。
+
+字数4000から8000文字、文章をメインに要所に箇条書き・表を用いて読みやすく。
+
+【指示文②】
+記事作成完了後、この記事のメタディスクリプションを作成してください。`,
+
+                "医療・クリニック": `【指示文①】
+
+＃サイト記事のゴール：東京都で歯科矯正の相談予約を増やすこと
+＃目標キーワード：{keyword}
+＃上位2-3記事をまとめて書いたオリジナル記事が下記
+＃集客のために関連するキーワード：歯科矯正 東京, インビザライン 東京, 矯正歯科 東京, 歯列矯正 費用, 大人 歯科矯正
+
+#下記はクロードAIで作成するSEOで上位を目指す記事です。この記事の評価が高くなければより良いものにしてください。
+
+字数3000から6000文字、文章をメインに要所に箇条書き・表を用いて読みやすく。医療広告ガイドライン準拠。
+
+【指示文②】
+記事作成完了後、この記事のメタディスクリプションを作成してください。`,
+
+                "不動産": `【指示文①】
+
+＃サイト記事のゴール：大阪市で不動産売却の査定依頼を増やすこと
+＃目標キーワード：{keyword}
+＃上位2-3記事をまとめて書いたオリジナル記事が下記
+＃集客のために関連するキーワード：不動産売却 大阪, マンション査定 大阪, 戸建て売却 大阪, 不動産査定 無料
+
+#下記はクロードAIで作成するSEOで上位を目指す記事です。この記事の評価が高くなければより良いものにしてください。
+
+字数4000から6000文字、文章をメインに要所に箇条書き・表・事例を用いて読みやすく。
+
+【指示文②】
+記事作成完了後、この記事のメタディスクリプションを作成してください。`
+            };
+            savePrompts();
+            updatePromptsList();
+            updateGenreSelect();
+            showStatus('デフォルトプロンプトを読み込みました', 'success');
+        }
+
+        function addPrompt() {
+            const genre = document.getElementById('newGenre').value.trim();
+            const prompt = document.getElementById('newPrompt').value.trim();
+            
+            if (!genre || !prompt) {
+                showStatus('ジャンル名とプロンプト内容を入力してください', 'error');
+                return;
+            }
+
+            prompts[genre] = prompt;
+            savePrompts();
+            updatePromptsList();
+            updateGenreSelect();
+            
+            document.getElementById('newGenre').value = '';
+            document.getElementById('newPrompt').value = '';
+            
+            showStatus(`「${genre}」プロンプトを追加しました`, 'success');
+        }
+
+        function editPrompt(genre) {
+            const newPrompt = prompt(`「${genre}」のプロンプトを編集:`, prompts[genre]);
+            if (newPrompt !== null && newPrompt.trim()) {
+                prompts[genre] = newPrompt.trim();
+                savePrompts();
+                updatePromptsList();
+                showStatus(`「${genre}」プロンプトを更新しました`, 'success');
+            }
+        }
+
+        function deletePrompt(genre) {
+            if (confirm(`「${genre}」のプロンプトを削除しますか？`)) {
+                delete prompts[genre];
+                savePrompts();
+                updatePromptsList();
+                updateGenreSelect();
+                showStatus(`「${genre}」プロンプトを削除しました`, 'success');
+            }
+        }
+
+        function updatePromptsList() {
+            const list = document.getElementById('promptsList');
+            list.innerHTML = '';
+            
+            if (Object.keys(prompts).length === 0) {
+                list.innerHTML = '<p>プロンプトが登録されていません。</p>';
+                return;
+            }
+
+            Object.keys(prompts).forEach(genre => {
+                const item = document.createElement('div');
+                item.className = 'prompt-item';
+                item.innerHTML = `
+                    <h4>${genre}</h4>
+                    <div style="max-height: 100px; overflow-y: auto; background: white; padding: 10px; border-radius: 4px; border: 1px solid #ddd; font-size: 12px;">
+                        ${prompts[genre].replace(/\n/g, '<br>')}
+                    </div>
+                    <div class="prompt-actions">
+                        <button onclick="editPrompt('${genre}')" class="secondary">✏️ 編集</button>
+                        <button onclick="deletePrompt('${genre}')" class="danger">🗑️ 削除</button>
+                    </div>
+                `;
+                list.appendChild(item);
+            });
+        }
+
+        function updateGenreSelect() {
+            const select = document.getElementById('genreSelect');
+            select.innerHTML = '<option value="">ジャンルを選択してください</option>';
+            
+            Object.keys(prompts).forEach(genre => {
+                const option = document.createElement('option');
+                option.value = genre;
+                option.textContent = genre;
+                select.appendChild(option);
+            });
+        }
+
+        function updateGenreSelection() {
+            const select = document.getElementById('genreSelect');
+            selectedGenre = select.value;
+            
+            if (selectedGenre) {
+                document.getElementById('promptPreview').innerHTML = prompts[selectedGenre].replace(/\n/g, '<br>');
+                document.getElementById('selectedPromptPreview').classList.remove('hidden');
+                showStatus(`「${selectedGenre}」ジャンルを選択しました`, 'success');
+            } else {
+                document.getElementById('selectedPromptPreview').classList.add('hidden');
+            }
+        }
+
+        // 記事抽出機能（既存のコードを統合）
+        function prepareExtraction() {
+            if (!selectedGenre) {
+                showStatus('まずジャンルを選択してください', 'error');
+                return;
+            }
+
+            const keyword = document.getElementById('keyword').value.trim();
+            const urlText = document.getElementById('urls').value.trim();
+            
+            if (!keyword || !urlText) {
+                showStatus('キーワードとURLを入力してください', 'error');
+                return;
+            }
+
+            urls = urlText.split('\n').filter(line => line.trim() && line.startsWith('http'));
+            if (urls.length === 0) {
+                showStatus('有効なURLが見つかりません', 'error');
+                return;
+            }
+
+            articles = [];
+            displayUrlList();
+            showStatus(`${urls.length}件の記事リストを作成しました`, 'success');
+        }
+
+        function displayUrlList() {
+            const urlItems = document.getElementById('urlItems');
+            urlItems.innerHTML = '';
+            
+            urls.forEach((url, index) => {
+                const item = document.createElement('div');
+                item.className = 'url-item';
+                item.innerHTML = `
+                    <div style="margin-bottom: 10px;">
+                        <strong>記事${index + 1}:</strong>
+                        <a href="${url}" target="_blank" class="url-link">${url}</a>
+                    </div>
+                    <button onclick="startInputForArticle(${index})" style="width: auto; padding: 8px 16px; margin: 5px 0;">
+                        📝 この記事の内容を入力
+                    </button>
+                `;
+                urlItems.appendChild(item);
+            });
+            
+            document.getElementById('urlList').classList.remove('hidden');
+        }
+
+        function startInputForArticle(index) {
+            currentIndex = index;
+            const url = urls[index];
+            
+            document.getElementById('currentUrl').textContent = url;
+            document.getElementById('articleContent').value = '';
+            document.getElementById('preview').classList.add('hidden');
+            document.getElementById('manualInput').classList.remove('hidden');
+            
+            window.open(url, '_blank');
+            showStatus('記事ページで全選択（Ctrl+A）→ コピー（Ctrl+C）→ 下に貼り付けてください', 'loading');
+        }
+
+        function previewContent() {
+            const rawContent = document.getElementById('articleContent').value.trim();
+            
+            if (!rawContent) {
+                showStatus('まず記事内容を貼り付けてください', 'error');
+                return;
+            }
+
+            if (rawContent.length < 100) {
+                showStatus('記事内容が短すぎます。記事全体をコピーしてください', 'error');
+                return;
+            }
+
+            const extracted = extractTitleAndContent(rawContent);
+            
+            document.getElementById('previewTitle').textContent = extracted.title;
+            document.getElementById('previewWordCount').textContent = extracted.cleanContent.length + '文字';
+            document.getElementById('previewContent').textContent = extracted.cleanContent.substring(0, 200) + '...';
+            document.getElementById('preview').classList.remove('hidden');
+            
+            showStatus('プレビューを表示しました。問題なければ「自動処理して追加」をクリックしてください', 'success');
+        }
+
+        function extractTitleAndContent(rawContent) {
+            let lines = rawContent.split('\n').filter(line => line.trim());
+            
+            let title = 'タイトル不明';
+            for (let line of lines) {
+                const cleanLine = line.trim();
+                if (cleanLine.length > 8 && cleanLine.length < 120 && 
+                    !cleanLine.includes('メニュー') && !cleanLine.includes('ナビ') &&
+                    !cleanLine.includes('ホーム') && !cleanLine.includes('サイト') &&
+                    !cleanLine.includes('検索') && !cleanLine.includes('ログイン') &&
+                    !cleanLine.includes('カテゴリ') && !cleanLine.includes('タグ')) {
+                    title = cleanLine;
+                    break;
+                }
+            }
+
+            const cleanContent = cleanContentAdvanced(rawContent);
+            return { title, cleanContent };
+        }
+
+        function addArticleAuto() {
+            const rawContent = document.getElementById('articleContent').value.trim();
+            
+            if (!rawContent) {
+                showStatus('記事内容を入力してください', 'error');
+                return;
+            }
+
+            const extracted = extractTitleAndContent(rawContent);
+            
+            const article = {
+                url: urls[currentIndex],
+                title: extracted.title,
+                content: extracted.cleanContent,
+                wordCount: extracted.cleanContent.length,
+                originalWordCount: rawContent.length
+            };
+
+            articles.push(article);
+            
+            showStatus(`記事${currentIndex + 1}を追加しました (${article.originalWordCount}→${article.wordCount}文字)`, 'success');
+            
+            document.getElementById('articleContent').value = '';
+            document.getElementById('preview').classList.add('hidden');
+            
+            markArticleAsProcessed(currentIndex);
+            
+            if (articles.length === urls.length) {
+                generateFinalResult();
+                document.getElementById('manualInput').classList.add('hidden');
+            }
+        }
+
+        function skipArticle() {
+            showStatus(`記事${currentIndex + 1}をスキップしました`, 'loading');
+            markArticleAsSkipped(currentIndex);
+            document.getElementById('articleContent').value = '';
+            document.getElementById('preview').classList.add('hidden');
+        }
+
+        function markArticleAsProcessed(index) {
+            const urlItems = document.getElementById('urlItems').children[index];
+            const button = urlItems.querySelector('button');
+            button.textContent = '✅ 処理済み';
+            button.disabled = true;
+            button.style.background = '#28a745';
+        }
+
+        function markArticleAsSkipped(index) {
+            const urlItems = document.getElementById('urlItems').children[index];
+            const button = urlItems.querySelector('button');
+            button.textContent = '⏭️ スキップ済み';
+            button.disabled = true;
+            button.style.background = '#6c757d';
+        }
+
+        function cleanContentAdvanced(rawContent) {
+            let cleaned = rawContent;
+            
+            cleaned = cleaned.replace(/<[^>]*>/g, '');
+            
+            const entityMap = {
+                '&amp;': '&', '&lt;': '<', '&gt;': '>', '&quot;': '"',
+                '&#039;': "'", '&nbsp;': ' ', '&copy;': '©', '&reg;': '®'
+            };
+            cleaned = cleaned.replace(/&[a-zA-Z0-9#]+;/g, entity => entityMap[entity] || '');
+            
+            const unwantedPatterns = [
+                /広告[\s\S]*?(?=\n|$)/gi, /目次[\s\S]*?(?=\n|$)/gi, /関連記事[\s\S]*?(?=\n|$)/gi,
+                /メニュー[\s\S]*?(?=\n|$)/gi, /ナビゲーション[\s\S]*?(?=\n|$)/gi, /フッター[\s\S]*?(?=\n|$)/gi,
+                /ヘッダー[\s\S]*?(?=\n|$)/gi, /サイドバー[\s\S]*?(?=\n|$)/gi, /スポンサー[\s\S]*?(?=\n|$)/gi,
+                /続きを読む[\s\S]*?(?=\n|$)/gi, /シェア[\s\S]*?(?=\n|$)/gi, /いいね[\s\S]*?(?=\n|$)/gi,
+                /コメント[\s\S]*?(?=\n|$)/gi, /Cookie[\s\S]*?(?=\n|$)/gi, /プライバシー[\s\S]*?(?=\n|$)/gi
+            ];
+            
+            unwantedPatterns.forEach(pattern => {
+                cleaned = cleaned.replace(pattern, '');
+            });
+            
+            cleaned = cleaned.replace(/\s+/g, ' ');
+            cleaned = cleaned.replace(/\n\s*\n\s*\n+/g, '\n\n');
+            cleaned = cleaned.replace(/^\s+|\s+$/gm, '');
+            
+            return cleaned.trim();
+        }
+
+        function generateFinalResult() {
+            const keyword = document.getElementById('keyword').value.trim();
+            
+            // 選択されたプロンプトにキーワードを埋め込み
+            let finalPrompt = prompts[selectedGenre].replace(/{keyword}/g, keyword);
+            
+            let result = finalPrompt + '\n\n';
+            result += '【参考記事データ】\n';
+            result += `抽出日時: ${new Date().toLocaleString('ja-JP')}\n`;
+            result += `処理記事数: ${articles.length}件\n\n`;
+
+            articles.forEach((article, index) => {
+                result += `=== 参考記事${index + 1} ===\n`;
+                result += `参照URL: ${article.url}\n`;
+                result += `記事タイトル: ${article.title}\n`;
+                result += `抽出文字数: ${article.wordCount}文字\n\n`;
+                result += `【クリーンアップ済み内容】\n${article.content}\n\n`;
+                result += '='.repeat(60) + '\n\n';
+            });
+
+            document.getElementById('result').value = result;
+            document.getElementById('output').classList.remove('hidden');
+            showStatus('Claude AI投入用データが完成しました！', 'success');
+        }
+
+        function copyResult() {
+            const result = document.getElementById('result');
+            result.select();
+            document.execCommand('copy');
+            showStatus('Claude AI投入用データをコピーしました。Claude AIに貼り付けてください！', 'success');
+        }
+    </script>
+</body>
+</html>
